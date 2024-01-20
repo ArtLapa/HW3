@@ -2,6 +2,7 @@ import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import time
+import unittest
 
 def process_folder(folder_path):
     files = []
@@ -24,61 +25,65 @@ def factorize(number):
     return factors
 
 def factorize_all(numbers):
-    result = []
-    for number in numbers:
-        result.append(factorize(number))
-    return result
+    with ProcessPoolExecutor() as executor:
+        return list(executor.map(factorize, numbers))
 
 def sort_files(files):
     return sorted(files)
 
-def main(source_folder, destination_folder, num_threads, num_processes):
-    with ThreadPoolExecutor(max_workers=num_threads) as thread_executor:
-        # Step 1: Process the source folder and get the list of files
-        files = process_folder(source_folder)
+class TestParallelFunctions(unittest.TestCase):
 
-        # Step 2: Move each file to the destination folder in parallel using threads
-        futures_move = [thread_executor.submit(move_file, file_path, destination_folder) for file_path in files]
+    def setUp(self):
+        self.source_folder = "TestFolder"
+        self.destination_folder = "SortedFolder"
+        self.num_threads = 2
+        self.num_processes = 2
+
+        if not os.path.exists(self.source_folder):
+            os.makedirs(self.source_folder)
+
+        if not os.path.exists(self.destination_folder):
+            os.makedirs(self.destination_folder)
+
+        # Create some test files in the source folder
+        for i in range(10):
+            open(os.path.join(self.source_folder, f"file{i}.txt"), 'w').close()
+
+    def tearDown(self):
+        shutil.rmtree(self.source_folder)
+        shutil.rmtree(self.destination_folder)
+
+    def test_file_sorting(self):
+        files_to_sort = process_folder(self.source_folder)
+        sorted_files = sort_files(files_to_sort)
+        self.assertEqual(sorted_files, sorted(files_to_sort))
+
+    def test_file_moving(self):
+        files_to_move = process_folder(self.source_folder)
+        with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
+            futures = [executor.submit(move_file, file_path, self.destination_folder) for file_path in files_to_move]
 
         # Wait for all the file-moving tasks to complete
-        for future in futures_move:
+        for future in futures:
             future.result()
 
-    with ProcessPoolExecutor(max_workers=num_processes) as process_executor:
-        # Step 3: Factorize numbers in parallel using processes
+        files_in_destination = process_folder(self.destination_folder)
+        self.assertEqual(len(files_in_destination), len(files_to_move))
+
+    def test_factorization(self):
         numbers_to_factorize = [128, 256, 512, 1024, 2048]
-        futures_factorize = [process_executor.submit(factorize, number) for number in numbers_to_factorize]
+        result_factorize = factorize_all(numbers_to_factorize)
 
-        # Wait for all the factorization tasks to complete
-        result_factorize = [future.result() for future in futures_factorize]
+        expected_factors = [[1, 2, 4, 8, 16, 32, 64, 128],
+                            [1, 2, 4, 8, 16, 32, 64, 128, 256],
+                            [1, 2, 4, 8, 16, 32, 64, 128, 256, 512],
+                            [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024],
+                            [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]]
 
-        print("Factors:")
-        for factors in result_factorize:
-            print(factors)
-
-    with ThreadPoolExecutor(max_workers=num_threads) as thread_executor:
-        # Step 4: Sort files in parallel using threads
-        futures_sort = [thread_executor.submit(sort_files, files)]
-
-        # Wait for the file sorting task to complete
-        sorted_files = futures_sort[0].result()
-
-        print("Sorted Files:")
-        for file_path in sorted_files:
-            print(file_path)
+        for i in range(len(numbers_to_factorize)):
+            self.assertEqual(result_factorize[i], expected_factors[i])
 
 if __name__ == "__main__":
-    source_folder = "Хлам"  # Ваша вхідна папка
-    destination_folder = "Сортовано"  # Папка, куди будуть переміщені файли
-    num_threads = 4  # Кількість потоків для паралельного обробки
-    num_processes = 2  # Кількість процесів для паралельного обробки
+    unittest.main()
 
-    if not os.path.exists(destination_folder):
-        os.makedirs(destination_folder)
-
-    start_time_main = time.time()
-    main(source_folder, destination_folder, num_threads, num_processes)
-    end_time_main = time.time()
-
-    print("Time taken for main program: {:.4f} seconds".format(end_time_main - start_time_main))
 
